@@ -1,18 +1,34 @@
 use std::io::Write;
-use std::ops::Add;
+use std::ops::{Add, Div, Mul, Sub};
 
-// Image
-const image_width: usize = 256;
-const image_height: usize = 256;
+// // Image
+// const image_width: usize = 256;
+// const image_height: usize = 256;
 
 fn main() {
     // println!("Hello, raytracing!");
+
+    // Image
+    let aspect_ratio = 16.0 / 9.0;
+    let image_width = 400;
+    let image_height: usize = (image_width as f64 / aspect_ratio) as usize;
+
+    // Camera
+
+    let viewport_height = 2.0;
+    let viewport_width = aspect_ratio * viewport_height;
+    let focal_length = 1.0;
+
+    let origin = point3::new(0.0, 0.0, 0.0);
+    let horizontal = vec3::new(viewport_width, 0.0, 0.0);
+    let vertical = vec3::new(0.0, viewport_height, 0.0);
+    let lower_left_corner =
+        origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
 
     // Render
     let out = std::io::stdout();
 
     print!("P3\n{} {}\n255\n", image_width, image_height);
-    // for j in image_height-1..=0 {
     for j in (0..image_height).rev() {
         eprint!("\rScanlines remaining: {} ", j);
         std::io::stderr().flush().expect("some error message");
@@ -23,14 +39,21 @@ fn main() {
 
             let pixel = color::new(r, g, b);
 
-            // print!("{} {} {}\n", ir, ig, ib);
-            write_color(&out, &pixel)
+            let u = i as f64 / (image_width - 1) as f64;
+            let v = j as f64 / (image_height - 1) as f64;
+            let ray = Ray::new(
+                origin,
+                lower_left_corner + horizontal * u + vertical * v - origin,
+            );
+            let pixel_color = ray.ray_color();
+            write_color(&out, &pixel_color)
         }
     }
 
     eprint!("\nDone.")
 }
 
+#[derive(Clone, Copy)]
 struct vec3 {
     x: f64,
     y: f64,
@@ -76,27 +99,63 @@ impl vec3 {
     }
 
     fn divide(&self, t: f64) -> Self {
-        self.multiply(1.0/t)
+        self.multiply(1.0 / t)
     }
 
     fn unit_vector(&self) -> Self {
         self.divide(self.length())
     }
 
-    fn length(&self) -> f64{
+    fn length(&self) -> f64 {
         self.length_squared().sqrt()
     }
 
     fn length_squared(&self) -> f64 {
-      self.x * self.x + self.y * self.y + self.z * self.z
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
+
+    fn dot(&self, v: &vec3) -> f64 {
+        self.x * v.x + self.y * v.y + self.z * v.z
+    }
+
+    fn cross(&self, v: &vec3) -> Self {
+        vec3::new(
+            self.y * v.z - self.z * v.y,
+            self.z * v.x - self.x * v.z,
+            self.x * v.y - self.y * v.x,
+        )
     }
 }
 
-impl Add for &vec3 {
-    type Output = vec3;
+impl Add for vec3 {
+    type Output = Self;
 
-    fn add(self, rhs: &vec3) -> vec3 {
+    fn add(self, rhs: Self) -> Self {
         self.plus(&rhs)
+    }
+}
+
+impl Sub for vec3 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        vec3::new(self.x() - rhs.x(), self.y() - rhs.y(), self.z() - rhs.z())
+    }
+}
+
+impl Div<f64> for vec3 {
+    type Output = Self;
+
+    fn div(self, rhs: f64) -> Self::Output {
+        self.divide(rhs)
+    }
+}
+
+impl Mul<f64> for vec3 {
+    type Output = Self;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        self.multiply(rhs)
     }
 }
 
@@ -105,7 +164,7 @@ impl Add for &vec3 {
 
 //         vec3& operator/=(const double t) {
 //             return *this *= 1/t;
-//         
+//
 // };
 
 // // Type aliases for vec3
@@ -142,21 +201,34 @@ impl Ray {
         Ray { origin, direction }
     }
 
-    fn origin(&self) -> &point3 {
-        &self.origin
+    fn origin(&self) -> point3 {
+        self.origin
     }
-    fn direction(&self) -> &vec3 {
-        &self.direction
+    fn direction(&self) -> vec3 {
+        self.direction
     }
 
-    fn at(&self, t: f64) -> point3  {
-        self.origin() + &(self.direction().multiply(t))
+    fn at(&self, t: f64) -> point3 {
+        self.origin() + self.direction().multiply(t)
     }
 }
 impl Ray {
     fn ray_color(&self) -> color {
+        if self.hit_sphere(point3::new(0.0,0.0,-1.0), 0.5) {
+            return color::new(1.0, 0.0, 0.0)
+        }
         let unit_direction = self.direction().unit_vector();
         let t = 0.5 * (unit_direction.y() + 1.0);
-        (&color::new(1.0, 1.0, 1.0).multiply(1.0-t)) + &(color::new(0.5, 0.7, 1.0).multiply(t))
+        color::new(1.0, 1.0, 1.0).multiply(1.0 - t) + color::new(0.5, 0.7, 1.0).multiply(t)
+    }
+
+    fn hit_sphere(&self, center: point3, radius: f64) -> bool {
+        let oc = self.origin() - center;
+        let dir = self.direction();
+        let a = self.direction().dot(&dir);
+        let b = 2.0 * oc.dot(&dir);
+        let c = oc.dot(&oc) - radius*radius;
+        let discriminant = b*b - a*c*4.0;
+        discriminant > 0.0
     }
 }
