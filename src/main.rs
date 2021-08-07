@@ -257,6 +257,9 @@ impl HitRecord {
             front_face,
         }
     }
+    fn empty() -> Self {
+        Self::new(point3::zeros(), vec3::zeros(), 0.0, false)
+    }
     fn set_face_normal(&mut self, ray: &Ray, outward_normal: vec3) {
         self.front_face = ray.direction().dot(&outward_normal) < 0.0;
         self.normal = if self.front_face {
@@ -268,7 +271,7 @@ impl HitRecord {
 }
 
 trait Hittable {
-    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64, record: &mut HitRecord) -> bool;
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord>;
 }
 
 struct Sphere {
@@ -284,7 +287,7 @@ impl Sphere {
 
 impl Hittable for Sphere {
     // TODO change hitrecord to optional return
-    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64, record: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
         let oc = ray.origin() - self.center;
         let dir = ray.direction();
         let a = dir.length_squared();
@@ -293,7 +296,7 @@ impl Hittable for Sphere {
 
         let discriminant = half_b * half_b - a * c;
         if discriminant < 0.0 {
-            return false;
+            return None;
         }
         let sqrtd = discriminant.sqrt();
 
@@ -302,17 +305,18 @@ impl Hittable for Sphere {
         if root < t_min || t_max < root {
             let root = (-half_b + sqrtd) / a;
             if root < t_min || t_max < root {
-                return false;
+                return None;
             }
         }
 
+        let mut record = HitRecord::empty();
         record.t = root;
         record.point = ray.at(record.t);
         record.normal = (record.point - self.center) / self.radius;
         let outward_normal = (record.point - self.center) / self.radius;
         record.set_face_normal(ray, outward_normal);
 
-        return true;
+        Some(record)
     }
 }
 
@@ -336,19 +340,22 @@ impl HittableList {
 }
 
 impl Hittable for HittableList {
-    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64, record: &mut HitRecord) -> bool {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
         let mut temp_rec = HitRecord::new(point3::zeros(), vec3::zeros(), 0.0, false);
         let mut hit_anything = false;
-        let closest_so_far = t_max;
+        let mut closest_so_far = t_max;
 
         for h in self.list.iter() {
-            if h.hit(ray, t_min, closest_so_far, &mut temp_rec) {
+            if let Some(record) = h.hit(ray, t_min, closest_so_far) {
                 hit_anything = true;
                 closest_so_far = temp_rec.t;
-                record = &mut temp_rec;
             }
         }
 
-        return hit_anything;
+        if !hit_anything {
+            None
+        } else {
+            Some(temp_rec)
+        }
     }
 }
