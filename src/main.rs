@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::ops::{Add, Div, Mul, Sub};
+use std::vec::Vec;
 
 // // Image
 // const image_width: usize = 256;
@@ -237,5 +238,117 @@ impl Ray {
             return -1.0;
         }
         (-half_b - discriminant.sqrt()) / a
+    }
+}
+
+struct HitRecord {
+    point: point3,
+    normal: vec3,
+    t: f64,
+    front_face: bool,
+}
+
+impl HitRecord {
+    fn new(point: point3, normal: vec3, t: f64, front_face: bool) -> Self {
+        Self {
+            point,
+            normal,
+            t,
+            front_face,
+        }
+    }
+    fn set_face_normal(&mut self, ray: &Ray, outward_normal: vec3) {
+        self.front_face = ray.direction().dot(&outward_normal) < 0.0;
+        self.normal = if self.front_face {
+            outward_normal
+        } else {
+            outward_normal.minus()
+        }
+    }
+}
+
+trait Hittable {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64, record: &mut HitRecord) -> bool;
+}
+
+struct Sphere {
+    center: point3,
+    radius: f64,
+}
+
+impl Sphere {
+    fn new(center: point3, radius: f64) -> Self {
+        Sphere { center, radius }
+    }
+}
+
+impl Hittable for Sphere {
+    // TODO change hitrecord to optional return
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64, record: &mut HitRecord) -> bool {
+        let oc = ray.origin() - self.center;
+        let dir = ray.direction();
+        let a = dir.length_squared();
+        let half_b = oc.dot(&dir);
+        let c = oc.length_squared() - self.radius * self.radius;
+
+        let discriminant = half_b * half_b - a * c;
+        if discriminant < 0.0 {
+            return false;
+        }
+        let sqrtd = discriminant.sqrt();
+
+        // Find the nearest root that lies in the acceptable range.
+        let root = (-half_b - sqrtd) / a;
+        if root < t_min || t_max < root {
+            let root = (-half_b + sqrtd) / a;
+            if root < t_min || t_max < root {
+                return false;
+            }
+        }
+
+        record.t = root;
+        record.point = ray.at(record.t);
+        record.normal = (record.point - self.center) / self.radius;
+        let outward_normal = (record.point - self.center) / self.radius;
+        record.set_face_normal(ray, outward_normal);
+
+        return true;
+    }
+}
+
+struct HittableList {
+    list: Vec<&'static dyn Hittable>,
+}
+
+impl HittableList {
+    fn  hittable_list() -> Self {
+        Self {
+            list: Vec::new(),
+        }
+    }
+        fn clear(&mut self) { self.list.clear() }
+        fn add(&mut self, hittable: &'static Hittable) { 
+            self.list.push(hittable)
+         }
+
+    //     virtual bool hit(
+    //         const ray& r, double t_min, double t_max, hit_record& rec) const override;
+}
+
+impl Hittable for HittableList {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64, record: &mut HitRecord) -> bool {
+        let mut temp_rec = HitRecord::new(point3::zeros(), vec3::zeros(), 0.0, false);
+        let mut hit_anything = false;
+        let closest_so_far = t_max;
+
+        for h in self.list.iter() {
+            if h.hit(ray, t_min, closest_so_far, &mut temp_rec) {
+                hit_anything = true;
+                closest_so_far = temp_rec.t;
+                record = &mut temp_rec;
+            }
+        }
+
+        return hit_anything;
     }
 }
