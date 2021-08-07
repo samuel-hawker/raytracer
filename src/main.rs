@@ -359,3 +359,19 @@ impl Hittable for HittableList {
         }
     }
 }
+
+// Constants
+const infinity: f64 = std::f64::INFINITY;
+const pi: f64 = std::f64::consts::PI;
+
+// Utility Functions
+
+// TODO make typed?
+fn degrees_to_radians(degrees: degrees) -> radians {
+    return degrees * pi / 180.0;
+}
+
+use f64 as degrees;
+use f64 as radians;
+
+// need to use pointers (box)
