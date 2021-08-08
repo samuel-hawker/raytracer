@@ -14,6 +14,15 @@ fn main() {
     let image_width = 400;
     let image_height: usize = (image_width as f64 / aspect_ratio) as usize;
 
+    // World
+    let mut world = HittableList::hittable_list();
+    let sphere1 = Sphere::new(point3::new(0.0, 0.0, -1.0), 0.5);
+    let sphere2 = Sphere::new(point3::new(0.0, -100.5, -1.0), 100.0);
+    // world.add(point3::new(0.0,0.0,-1.0), 0.5));
+    // world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
+    world.add(&sphere1);
+    world.add(&sphere2);
+
     // Camera
 
     let viewport_height = 2.0;
@@ -46,7 +55,7 @@ fn main() {
                 origin,
                 lower_left_corner + horizontal * u + vertical * v - origin,
             );
-            let pixel_color = ray.ray_color();
+            let pixel_color = ray.ray_color(&world);
             write_color(&out, &pixel_color)
         }
     }
@@ -214,11 +223,14 @@ impl Ray {
     }
 }
 impl Ray {
-    fn ray_color(&self) -> color {
-        let t = self.hit_sphere(point3::new(0.0, 0.0, -1.0), 0.5);
-        if t > 0.0 {
-            let n = (self.at(t) - vec3::new(0.0, 0.0, -1.0)).unit_vector();
-            return color::new(n.x() + 1.0, n.y() + 1.0, n.z() + 1.0) * 0.5;
+    fn ray_color(&self, world: &dyn Hittable) -> color {
+        // let t = self.hit_sphere(point3::new(0.0, 0.0, -1.0), 0.5);
+        // if t > 0.0 {
+        //     let n = (self.at(t) - vec3::new(0.0, 0.0, -1.0)).unit_vector();
+        //     return color::new(n.x() + 1.0, n.y() + 1.0, n.z() + 1.0) * 0.5;
+        // }
+        if let Some(record) = world.hit(self, 0.0, infinity) {
+            return (record.normal + color::new(1.0, 1.0, 1.0)) * 0.5;
         }
 
         let unit_direction = self.direction().unit_vector();
@@ -226,6 +238,16 @@ impl Ray {
         let t = 0.5 * (unit_direction.y() + 1.0);
         color::new(1.0, 1.0, 1.0).multiply(1.0 - t) + color::new(0.5, 0.7, 1.0).multiply(t)
     }
+
+    // color ray_color(const ray& r, const hittable& world) {
+    //     hit_record rec;
+    //     if (world.hit(r, 0, infinity, rec)) {
+    //         return 0.5 * (rec.normal + color(1,1,1));
+    //     }
+    //     vec3 unit_direction = unit_vector(r.direction());
+    //     auto t = 0.5*(unit_direction.y() + 1.0);
+    //     return (1.0-t)*color(1.0, 1.0, 1.0) + t*color(0.5, 0.7, 1.0);
+    // }
 
     fn hit_sphere(&self, center: point3, radius: f64) -> f64 {
         let oc = self.origin() - center;
@@ -320,42 +342,43 @@ impl Hittable for Sphere {
     }
 }
 
-struct HittableList {
-    list: Vec<&'static dyn Hittable>,
+struct HittableList<'a> {
+    list: Vec<&'a dyn Hittable>,
 }
 
-impl HittableList {
-    fn  hittable_list() -> Self {
-        Self {
-            list: Vec::new(),
-        }
+impl<'a> HittableList<'a> {
+    fn hittable_list() -> Self {
+        Self { list: Vec::new() }
     }
-        fn clear(&mut self) { self.list.clear() }
-        fn add(&mut self, hittable: &'static Hittable) { 
-            self.list.push(hittable)
-         }
+    fn clear(&mut self) {
+        self.list.clear()
+    }
+    fn add(&mut self, hittable: &'a Hittable) {
+        self.list.push(hittable)
+    }
 
     //     virtual bool hit(
     //         const ray& r, double t_min, double t_max, hit_record& rec) const override;
 }
 
-impl Hittable for HittableList {
+impl<'a> Hittable for HittableList<'a> {
     fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
-        let mut temp_rec = HitRecord::new(point3::zeros(), vec3::zeros(), 0.0, false);
+        let mut record = HitRecord::new(point3::zeros(), vec3::zeros(), 0.0, false);
         let mut hit_anything = false;
         let mut closest_so_far = t_max;
 
         for h in self.list.iter() {
-            if let Some(record) = h.hit(ray, t_min, closest_so_far) {
+            if let Some(r) = h.hit(ray, t_min, closest_so_far) {
                 hit_anything = true;
-                closest_so_far = temp_rec.t;
+                closest_so_far = r.t;
+                record = r
             }
         }
 
         if !hit_anything {
             None
         } else {
-            Some(temp_rec)
+            Some(record)
         }
     }
 }
