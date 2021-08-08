@@ -2,53 +2,45 @@ use std::io::Write;
 use std::ops::{Add, Div, Mul, Sub};
 use std::vec::Vec;
 
-// // Image
-// const image_width: usize = 256;
-// const image_height: usize = 256;
-
 fn main() {
-    // println!("Hello, raytracing!");
 
-    // Image
+    // Image - the dimensions of the image we want to generate
     let aspect_ratio = 16.0 / 9.0;
     let image_width = 400;
     let image_height: usize = (image_width as f64 / aspect_ratio) as usize;
 
-    // World
-    let mut world = HittableList::hittable_list();
+    // World - the objects on our canvas that wil interact with rays
     let sphere1 = Sphere::new(point3::new(0.0, 0.0, -1.0), 0.5);
     let sphere2 = Sphere::new(point3::new(0.0, -100.5, -1.0), 100.0);
-    // world.add(point3::new(0.0,0.0,-1.0), 0.5));
-    // world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
+
+    let mut world = HittableList::hittable_list();
     world.add(&sphere1);
     world.add(&sphere2);
 
-    // Camera
-
+    // Camera - the position and angle from which we will capture an image
     let viewport_height = 2.0;
     let viewport_width = aspect_ratio * viewport_height;
     let focal_length = 1.0;
-
     let origin = point3::new(0.0, 0.0, 0.0);
     let horizontal = vec3::new(viewport_width, 0.0, 0.0);
     let vertical = vec3::new(0.0, viewport_height, 0.0);
     let lower_left_corner =
         origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
 
-    // Render
+    // where we will output th image, currently stdout
     let out = std::io::stdout();
 
+    // Render an image
+
+    // the metadata at the top of th ppm file
     print!("P3\n{} {}\n255\n", image_width, image_height);
+    // range across the image height and width and compute the colour of each pixel
     for j in (0..image_height).rev() {
+        // debug to stderr
         eprint!("\rScanlines remaining: {} ", j);
         std::io::stderr().flush().expect("some error message");
+
         for i in 0..image_width {
-            let r: f64 = i as f64 / (image_width - 1) as f64;
-            let g: f64 = j as f64 / (image_height - 1) as f64;
-            let b: f64 = 0.25;
-
-            let pixel = color::new(r, g, b);
-
             let u = i as f64 / (image_width - 1) as f64;
             let v = j as f64 / (image_height - 1) as f64;
             let ray = Ray::new(
@@ -169,24 +161,12 @@ impl Mul<f64> for vec3 {
     }
 }
 
-//         double operator[](int i) const { return e[i]; }
-//         double& operator[](int i) { return e[i]; }
-
-//         vec3& operator/=(const double t) {
-//             return *this *= 1/t;
-//
-// };
-
-// // Type aliases for vec3
+// Type aliases for vec3
 use vec3 as point3; // 3D point
 use vec3 as color; // RGB color
 
+// write colour in the ppm format of 'r g b'
 fn write_color(out: &std::io::Stdout, pixel_color: &color) {
-    // Write the translated [0,255] value of each color component.
-    // out << static_cast<int>(255.999 * pixel_color.x()) << ' '
-    // << static_cast<int>(255.999 * pixel_color.y()) << ' '
-    // << static_cast<int>(255.999 * pixel_color.z()) << '\n';
-
     print!(
         "{} {} {}\n",
         (255.999 * pixel_color.x()) as usize,
@@ -224,30 +204,16 @@ impl Ray {
 }
 impl Ray {
     fn ray_color(&self, world: &dyn Hittable) -> color {
-        // let t = self.hit_sphere(point3::new(0.0, 0.0, -1.0), 0.5);
-        // if t > 0.0 {
-        //     let n = (self.at(t) - vec3::new(0.0, 0.0, -1.0)).unit_vector();
-        //     return color::new(n.x() + 1.0, n.y() + 1.0, n.z() + 1.0) * 0.5;
-        // }
+        // if there is a hit then compute the colour from the hit's normal
         if let Some(record) = world.hit(self, 0.0, infinity) {
             return (record.normal + color::new(1.0, 1.0, 1.0)) * 0.5;
         }
 
+        // otherwise compute background
         let unit_direction = self.direction().unit_vector();
-        // shadowing
         let t = 0.5 * (unit_direction.y() + 1.0);
         color::new(1.0, 1.0, 1.0).multiply(1.0 - t) + color::new(0.5, 0.7, 1.0).multiply(t)
     }
-
-    // color ray_color(const ray& r, const hittable& world) {
-    //     hit_record rec;
-    //     if (world.hit(r, 0, infinity, rec)) {
-    //         return 0.5 * (rec.normal + color(1,1,1));
-    //     }
-    //     vec3 unit_direction = unit_vector(r.direction());
-    //     auto t = 0.5*(unit_direction.y() + 1.0);
-    //     return (1.0-t)*color(1.0, 1.0, 1.0) + t*color(0.5, 0.7, 1.0);
-    // }
 
     fn hit_sphere(&self, center: point3, radius: f64) -> f64 {
         let oc = self.origin() - center;
@@ -308,7 +274,6 @@ impl Sphere {
 }
 
 impl Hittable for Sphere {
-    // TODO change hitrecord to optional return
     fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
         let oc = ray.origin() - self.center;
         let dir = ray.direction();
@@ -356,9 +321,6 @@ impl<'a> HittableList<'a> {
     fn add(&mut self, hittable: &'a Hittable) {
         self.list.push(hittable)
     }
-
-    //     virtual bool hit(
-    //         const ray& r, double t_min, double t_max, hit_record& rec) const override;
 }
 
 impl<'a> Hittable for HittableList<'a> {
