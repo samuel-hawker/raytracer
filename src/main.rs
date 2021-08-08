@@ -1,9 +1,9 @@
+use rand::random;
 use std::io::Write;
 use std::ops::{Add, Div, Mul, Sub};
 use std::vec::Vec;
 
 fn main() {
-
     // Image - the dimensions of the image we want to generate
     let aspect_ratio = 16.0 / 9.0;
     let image_width = 400;
@@ -345,15 +345,52 @@ impl<'a> Hittable for HittableList<'a> {
     }
 }
 
+struct Camera {
+    origin: point3,
+    lower_left_corner: point3,
+    horizontal: vec3,
+    vertical: vec3,
+}
+
+impl Camera {
+    fn new() -> Self {
+        let aspect_ratio = 16.0 / 9.0;
+        let viewport_height = 2.0;
+        let viewport_width = aspect_ratio * viewport_height;
+        let focal_length = 1.0;
+        let origin = point3::new(0.0, 0.0, 0.0);
+        let horizontal = vec3::new(viewport_width, 0.0, 0.0);
+        let vertical = vec3::new(0.0, viewport_height, 0.0);
+        let lower_left_corner =
+            origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
+        Self {
+            origin,
+            horizontal,
+            vertical,
+            lower_left_corner,
+        }
+    }
+
+    fn get_ray(&self, u: f64, v: f64) -> Ray {
+        Ray::new(
+            self.origin,
+            self.lower_left_corner + self.horizontal * u + self.vertical * v - self.origin,
+        )
+    }
+}
+
 // Constants
 const infinity: f64 = std::f64::INFINITY;
 const pi: f64 = std::f64::consts::PI;
 
 // Utility Functions
-
-// TODO make typed?
 fn degrees_to_radians(degrees: degrees) -> radians {
     return degrees * pi / 180.0;
+}
+
+// Returns a random f64 in [0,1).
+fn random_f64() -> f64 {
+    random::<f64>()
 }
 
 use f64 as degrees;
