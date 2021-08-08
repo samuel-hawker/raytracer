@@ -36,7 +36,6 @@ fn main() {
         std::io::stderr().flush().expect("some error message");
 
         for i in 0..image_width {
-
             let mut pixel_color = color::new(0.0, 0.0, 0.0);
             for _ in 0..samples_per_pixel {
                 let u = (i as f64 + random_f64()) / (image_width - 1) as f64;
@@ -45,7 +44,7 @@ fn main() {
                 pixel_color = pixel_color + ray.ray_color(&world, max_depth);
             }
 
-           write_color(&out, &pixel_color, samples_per_pixel);
+            write_color(&out, &pixel_color, samples_per_pixel);
         }
     }
 
@@ -126,18 +125,22 @@ impl vec3 {
     }
 
     fn random() -> Self {
-       Self::new(random_f64(), random_f64(), random_f64())
+        Self::new(random_f64(), random_f64(), random_f64())
     }
 
     fn random_range(min: f64, max: f64) -> Self {
-        vec3::new(random_f64_range(min,max), random_f64_range(min,max), random_f64_range(min,max))
+        vec3::new(
+            random_f64_range(min, max),
+            random_f64_range(min, max),
+            random_f64_range(min, max),
+        )
     }
 
     fn random_in_unit_sphere() -> Self {
-       loop {
-            let p = vec3::random_range(-1.0,1.0);
+        loop {
+            let p = vec3::random_range(-1.0, 1.0);
             if p.length_squared() >= 1.0 {
-                continue
+                continue;
             }
             return p;
         }
@@ -229,15 +232,14 @@ impl Ray {
 }
 impl Ray {
     fn ray_color(&self, world: &dyn Hittable, depth: usize) -> color {
-
         // If we've exceeded the ray bounce limit, no more light is gathered.
         if depth <= 0 {
-           return color::zeros();
+            return color::zeros();
         }
 
         // if there is a hit then compute the colour from the hit's normal
         if let Some(record) = world.hit(self, 0.001, infinity) {
-            let target = record.point + record.normal + vec3::random_in_unit_sphere();
+            let target = record.point + record.normal + vec3::random_unit_vector();
             return Ray::new(record.point, target - record.point).ray_color(world, depth - 1) * 0.5;
         }
 
@@ -411,6 +413,13 @@ impl Camera {
     }
 }
 
+//the material needs to do two things:
+// Produce a scattered ray (or say it absorbed the incident ray).
+// If scattered, say how much the ray should be attenuated.
+trait Material {
+    fn scatter(ray_in: Ray, record: HitRecord, attenuation: color, scattered: Ray) -> bool;
+}
+
 // Constants
 const infinity: f64 = std::f64::INFINITY;
 const pi: f64 = std::f64::consts::PI;
@@ -427,7 +436,7 @@ fn random_f64() -> f64 {
 
 // 0-1 -> -1-2
 // Returns a random f64 in [mix,max).
-fn random_f64_range(min:  f64, max: f64) -> f64 {
+fn random_f64_range(min: f64, max: f64) -> f64 {
     random::<f64>() * (max - min) + min
 }
 
