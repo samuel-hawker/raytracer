@@ -9,6 +9,7 @@ fn main() {
     let image_width = 400;
     let image_height: usize = (image_width as f64 / aspect_ratio) as usize;
     let samples_per_pixel = 100;
+    let max_depth = 50;
 
     // World - the objects on our canvas that wil interact with rays
     let sphere1 = Sphere::new(point3::new(0.0, 0.0, -1.0), 0.5);
@@ -20,14 +21,6 @@ fn main() {
 
     // Camera - the position and angle from which we will capture an image
     let camera = Camera::new();
-    // let viewport_height = 2.0;
-    // let viewport_width = aspect_ratio * viewport_height;
-    // let focal_length = 1.0;
-    // let origin = point3::new(0.0, 0.0, 0.0);
-    // let horizontal = vec3::new(viewport_width, 0.0, 0.0);
-    // let vertical = vec3::new(0.0, viewport_height, 0.0);
-    // let lower_left_corner =
-    //     origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
 
     // where we will output th image, currently stdout
     let out = std::io::stdout();
@@ -49,7 +42,7 @@ fn main() {
                 let u = (i as f64 + random_f64()) / (image_width - 1) as f64;
                 let v = (j as f64 + random_f64()) / (image_height - 1) as f64;
                 let ray = camera.get_ray(u, v);
-                pixel_color = pixel_color + ray.ray_color(&world);
+                pixel_color = pixel_color + ray.ray_color(&world, max_depth);
             }
 
            write_color(&out, &pixel_color, samples_per_pixel);
@@ -125,11 +118,33 @@ impl vec3 {
     }
 
     fn cross(&self, v: &vec3) -> Self {
-        vec3::new(
+        Self::new(
             self.y * v.z - self.z * v.y,
             self.z * v.x - self.x * v.z,
             self.x * v.y - self.y * v.x,
         )
+    }
+
+    fn random() -> Self {
+       Self::new(random_f64(), random_f64(), random_f64())
+    }
+
+    fn random_range(min: f64, max: f64) -> Self {
+        vec3::new(random_f64_range(min,max), random_f64_range(min,max), random_f64_range(min,max))
+    }
+
+    fn random_in_unit_sphere() -> Self {
+       loop {
+            let p = vec3::random_range(-1.0,1.0);
+            if p.length_squared() >= 1.0 {
+                continue
+            }
+            return p;
+        }
+    }
+
+    fn random_unit_vector() -> Self {
+        Self::random_in_unit_sphere().unit_vector()
     }
 }
 
@@ -173,9 +188,9 @@ use vec3 as color; // RGB color
 fn write_color(out: &std::io::Stdout, pixel_color: &color, samples_per_pixel: usize) {
     // Divide the color by the number of samples.
     let scale = 1.0 / samples_per_pixel as f64;
-    let r = pixel_color.x() * scale;
-    let g = pixel_color.y() * scale;
-    let b = pixel_color.z() * scale;
+    let r = (pixel_color.x() * scale).sqrt();
+    let g = (pixel_color.y() * scale).sqrt();
+    let b = (pixel_color.z() * scale).sqrt();
 
     print!(
         "{} {} {}\n",
@@ -213,10 +228,17 @@ impl Ray {
     }
 }
 impl Ray {
-    fn ray_color(&self, world: &dyn Hittable) -> color {
+    fn ray_color(&self, world: &dyn Hittable, depth: usize) -> color {
+
+        // If we've exceeded the ray bounce limit, no more light is gathered.
+        if depth <= 0 {
+           return color::zeros();
+        }
+
         // if there is a hit then compute the colour from the hit's normal
-        if let Some(record) = world.hit(self, 0.0, infinity) {
-            return (record.normal + color::new(1.0, 1.0, 1.0)) * 0.5;
+        if let Some(record) = world.hit(self, 0.001, infinity) {
+            let target = record.point + record.normal + vec3::random_in_unit_sphere();
+            return Ray::new(record.point, target - record.point).ray_color(world, depth - 1) * 0.5;
         }
 
         // otherwise compute background
@@ -401,6 +423,12 @@ fn degrees_to_radians(degrees: degrees) -> radians {
 // Returns a random f64 in [0,1).
 fn random_f64() -> f64 {
     random::<f64>()
+}
+
+// 0-1 -> -1-2
+// Returns a random f64 in [mix,max).
+fn random_f64_range(min:  f64, max: f64) -> f64 {
+    random::<f64>() * (max - min) + min
 }
 
 fn clamp(x: f64, min: f64, max: f64) -> f64 {
