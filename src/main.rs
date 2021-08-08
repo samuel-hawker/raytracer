@@ -8,6 +8,7 @@ fn main() {
     let aspect_ratio = 16.0 / 9.0;
     let image_width = 400;
     let image_height: usize = (image_width as f64 / aspect_ratio) as usize;
+    let samples_per_pixel = 100;
 
     // World - the objects on our canvas that wil interact with rays
     let sphere1 = Sphere::new(point3::new(0.0, 0.0, -1.0), 0.5);
@@ -18,14 +19,15 @@ fn main() {
     world.add(&sphere2);
 
     // Camera - the position and angle from which we will capture an image
-    let viewport_height = 2.0;
-    let viewport_width = aspect_ratio * viewport_height;
-    let focal_length = 1.0;
-    let origin = point3::new(0.0, 0.0, 0.0);
-    let horizontal = vec3::new(viewport_width, 0.0, 0.0);
-    let vertical = vec3::new(0.0, viewport_height, 0.0);
-    let lower_left_corner =
-        origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
+    let camera = Camera::new();
+    // let viewport_height = 2.0;
+    // let viewport_width = aspect_ratio * viewport_height;
+    // let focal_length = 1.0;
+    // let origin = point3::new(0.0, 0.0, 0.0);
+    // let horizontal = vec3::new(viewport_width, 0.0, 0.0);
+    // let vertical = vec3::new(0.0, viewport_height, 0.0);
+    // let lower_left_corner =
+    //     origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
 
     // where we will output th image, currently stdout
     let out = std::io::stdout();
@@ -41,14 +43,16 @@ fn main() {
         std::io::stderr().flush().expect("some error message");
 
         for i in 0..image_width {
-            let u = i as f64 / (image_width - 1) as f64;
-            let v = j as f64 / (image_height - 1) as f64;
-            let ray = Ray::new(
-                origin,
-                lower_left_corner + horizontal * u + vertical * v - origin,
-            );
-            let pixel_color = ray.ray_color(&world);
-            write_color(&out, &pixel_color)
+
+            let mut pixel_color = color::new(0.0, 0.0, 0.0);
+            for _ in 0..samples_per_pixel {
+                let u = (i as f64 + random_f64()) / (image_width - 1) as f64;
+                let v = (j as f64 + random_f64()) / (image_height - 1) as f64;
+                let ray = camera.get_ray(u, v);
+                pixel_color = pixel_color + ray.ray_color(&world);
+            }
+
+           write_color(&out, &pixel_color, samples_per_pixel);
         }
     }
 
@@ -166,12 +170,18 @@ use vec3 as point3; // 3D point
 use vec3 as color; // RGB color
 
 // write colour in the ppm format of 'r g b'
-fn write_color(out: &std::io::Stdout, pixel_color: &color) {
+fn write_color(out: &std::io::Stdout, pixel_color: &color, samples_per_pixel: usize) {
+    // Divide the color by the number of samples.
+    let scale = 1.0 / samples_per_pixel as f64;
+    let r = pixel_color.x() * scale;
+    let g = pixel_color.y() * scale;
+    let b = pixel_color.z() * scale;
+
     print!(
         "{} {} {}\n",
-        (255.999 * pixel_color.x()) as usize,
-        (255.999 * pixel_color.y()) as usize,
-        (255.999 * pixel_color.z()) as usize,
+        (256.0 * clamp_basic(r)) as usize,
+        (256.0 * clamp_basic(g)) as usize,
+        (256.0 * clamp_basic(b)) as usize,
     );
 }
 
@@ -391,6 +401,20 @@ fn degrees_to_radians(degrees: degrees) -> radians {
 // Returns a random f64 in [0,1).
 fn random_f64() -> f64 {
     random::<f64>()
+}
+
+fn clamp(x: f64, min: f64, max: f64) -> f64 {
+    if x < min {
+        return min;
+    }
+    if x > max {
+        return max;
+    }
+    x
+}
+
+fn clamp_basic(x: f64) -> f64 {
+    clamp(x, 0.0, 0.999)
 }
 
 use f64 as degrees;
