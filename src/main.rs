@@ -12,20 +12,48 @@ fn main() {
     let max_depth = 50;
 
     // World - the objects on our canvas that wil interact with rays
-    let sphere1 = Sphere::new(
-        point3::new(0.0, 0.0, -1.0),
-        0.5,
-        Option::Some(Box::from(Lambertian::new(color::new(0.0, 0.0, 1.0)))),
-    );
-    let sphere2 = Sphere::new(
-        point3::new(0.0, -100.5, -1.0),
-        100.0,
-        Option::Some(Box::from(Lambertian::new(color::new(1.0, 0.0, 0.0)))),
-    );
+    // let sphere1 = Sphere::new(
+    //     point3::new(0.0, 0.0, -1.0),
+    //     0.5,
+    //     Option::Some(Box::from(Lambertian::new(color::new(0.0, 0.0, 1.0)))),
+    // );
+    // let sphere2 = Sphere::new(
+    //     point3::new(0.0, -100.5, -1.0),
+    //     100.0,
+    //     Option::Some(Box::from(Lambertian::new(color::new(1.0, 0.0, 0.0)))),
+    // );
+
+    let material_ground = Lambertian::new(color::new(0.8, 0.8, 0.0));
+    let material_center =  Lambertian::new(color::new(0.7, 0.3, 0.3));
+    let material_left   =  Metal::new(color::new(0.8, 0.8, 0.8));
+    let material_right  = Metal::new(color::new(0.8, 0.6, 0.2));
 
     let mut world = HittableList::hittable_list();
+    let sphere1 = Sphere::new(
+        point3::new(0.0, -100.5, -1.0),
+        100.0,
+        Option::Some(Box::from(material_ground)),
+    );
+    let sphere2 = Sphere::new(
+        point3::new(0.0,    0.0, -1.0),
+        0.5,
+        Option::Some(Box::from(material_center)),
+    );
+       let sphere3 = Sphere::new(
+        point3::new(-1.0,    0.0, -1.0),
+        0.5,
+        Option::Some(Box::from(material_left)),
+    );
+    let sphere4 = Sphere::new(
+        point3::new(1.0,    0.0, -1.0),
+        0.5,
+        Option::Some(Box::from(material_right)),
+    );
     world.add(&sphere1);
     world.add(&sphere2);
+    world.add(&sphere3);
+    world.add(&sphere4);
+
 
     // Camera - the position and angle from which we will capture an image
     let camera = Camera::new();
@@ -165,7 +193,7 @@ impl vec3 {
     }
 
     fn reflect(self, n: Self) -> Self {
-        self - (n * 2.0 * self.dot(&n) )
+        self - (n * 2.0 * self.dot(&n))
     }
 }
 
@@ -181,7 +209,7 @@ impl Sub for vec3 {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        vec3::new(self.x() - rhs.x(), self.y() - rhs.y(), self.z() - rhs.z())
+        Self::new(self.x() - rhs.x(), self.y() - rhs.y(), self.z() - rhs.z())
     }
 }
 
@@ -392,7 +420,7 @@ impl<'a> HittableList<'a> {
     fn clear(&mut self) {
         self.list.clear()
     }
-    fn add(&mut self, hittable: &'a Hittable) {
+    fn add(&mut self, hittable: &'a dyn Hittable) {
         self.list.push(hittable)
     }
 }
@@ -516,9 +544,9 @@ impl Material for Metal {
         let attenuation = self.albedo;
         
         if scattered.direction().dot(&record.normal) > 0.0 {
-            Option::None
-        } else {
             Option::Some(ScatterRecord::new(attenuation, scattered))
+        } else {
+            Option::None
         }
     }
 }
