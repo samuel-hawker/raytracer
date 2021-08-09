@@ -11,21 +11,9 @@ fn main() {
     let samples_per_pixel = 100;
     let max_depth = 50;
 
-    // World - the objects on our canvas that wil interact with rays
-    // let sphere1 = Sphere::new(
-    //     point3::new(0.0, 0.0, -1.0),
-    //     0.5,
-    //     Option::Some(Box::from(Lambertian::new(color::new(0.0, 0.0, 1.0)))),
-    // );
-    // let sphere2 = Sphere::new(
-    //     point3::new(0.0, -100.5, -1.0),
-    //     100.0,
-    //     Option::Some(Box::from(Lambertian::new(color::new(1.0, 0.0, 0.0)))),
-    // );
-
     let material_ground = Lambertian::new(color::new(0.8, 0.8, 0.0));
-    let material_center = Lambertian::new(color::new(0.7, 0.3, 0.3));
-    let material_left = Metal::new(color::new(0.8, 0.8, 0.8), 0.3);
+    let material_center = Dielectric::new(1.0);
+    let material_left = Dielectric::new(1.0);
     let material_right = Metal::new(color::new(0.8, 0.6, 0.2), 1.0);
 
     let mut world = HittableList::hittable_list();
@@ -71,7 +59,7 @@ fn main() {
         std::io::stderr().flush().expect("some error message");
 
         for i in 0..image_width {
-            let mut pixel_color = color::new(0.0, 0.0, 0.0);
+            let mut pixel_color = color::zeros();
             for _ in 0..samples_per_pixel {
                 let u = (i as f64 + random_f64()) / (image_width - 1) as f64;
                 let v = (j as f64 + random_f64()) / (image_height - 1) as f64;
@@ -86,14 +74,14 @@ fn main() {
     eprint!("\nDone.")
 }
 
-#[derive(Clone, Copy)]
-struct vec3 {
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Vec3 {
     x: f64,
     y: f64,
     z: f64,
 }
 
-impl vec3 {
+impl Vec3 {
     fn zeros() -> Self {
         Self {
             x: 0.0,
@@ -147,11 +135,11 @@ impl vec3 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
 
-    fn dot(&self, v: &vec3) -> f64 {
+    fn dot(&self, v: &Vec3) -> f64 {
         self.x * v.x + self.y * v.y + self.z * v.z
     }
 
-    fn cross(&self, v: &vec3) -> Self {
+    fn cross(&self, v: &Vec3) -> Self {
         Self::new(
             self.y * v.z - self.z * v.y,
             self.z * v.x - self.x * v.z,
@@ -164,7 +152,7 @@ impl vec3 {
     }
 
     fn random_range(min: f64, max: f64) -> Self {
-        vec3::new(
+        Vec3::new(
             random_f64_range(min, max),
             random_f64_range(min, max),
             random_f64_range(min, max),
@@ -173,7 +161,7 @@ impl vec3 {
 
     fn random_in_unit_sphere() -> Self {
         loop {
-            let p = vec3::random_range(-1.0, 1.0);
+            let p = Vec3::random_range(-1.0, 1.0);
             if p.length_squared() >= 1.0 {
                 continue;
             }
@@ -194,9 +182,16 @@ impl vec3 {
     fn reflect(self, n: Self) -> Self {
         self - (n * 2.0 * self.dot(&n))
     }
+
+    fn refract(self, n: Self, etai_over_etat: f64) -> Self {
+        let cos_theta = f64::min(self.minus().dot(&n), 1.0);
+        let r_out_perp = (self + (n * cos_theta)) * etai_over_etat;
+        let r_out_parallel = -( (1.0 - r_out_perp.length_squared()).abs() .sqrt()) * n;
+        r_out_perp + r_out_parallel
+    }
 }
 
-impl Add for vec3 {
+impl Add for Vec3 {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -204,7 +199,7 @@ impl Add for vec3 {
     }
 }
 
-impl Sub for vec3 {
+impl Sub for Vec3 {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
@@ -212,7 +207,7 @@ impl Sub for vec3 {
     }
 }
 
-impl Div<f64> for vec3 {
+impl Div<f64> for Vec3 {
     type Output = Self;
 
     fn div(self, rhs: f64) -> Self::Output {
@@ -220,7 +215,7 @@ impl Div<f64> for vec3 {
     }
 }
 
-impl Mul<f64> for vec3 {
+impl Mul<f64> for Vec3 {
     type Output = Self;
 
     fn mul(self, rhs: f64) -> Self::Output {
@@ -228,7 +223,15 @@ impl Mul<f64> for vec3 {
     }
 }
 
-impl Mul for vec3 {
+impl Mul<Vec3> for f64 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        rhs.multiply(self)
+    }
+}
+
+impl Mul for Vec3 {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -236,9 +239,9 @@ impl Mul for vec3 {
     }
 }
 
-// Type aliases for vec3
-use vec3 as point3; // 3D point
-use vec3 as color; // RGB color
+// Type aliases for Vec3
+use Vec3 as point3; // 3D point
+use Vec3 as color; // RGB color
 
 // write colour in the ppm format of 'r g b'
 fn write_color(out: &std::io::Stdout, pixel_color: &color, samples_per_pixel: usize) {
@@ -256,16 +259,17 @@ fn write_color(out: &std::io::Stdout, pixel_color: &color, samples_per_pixel: us
     );
 }
 
+#[derive(Debug)]
 struct Ray {
     origin: point3,
-    direction: vec3,
+    direction: Vec3,
 }
 
 impl Ray {
     fn zeros() -> Self {
         Ray {
             origin: point3::zeros(),
-            direction: vec3::zeros(),
+            direction: Vec3::zeros(),
         }
     }
     fn new(origin: point3, direction: point3) -> Self {
@@ -275,15 +279,14 @@ impl Ray {
     fn origin(&self) -> point3 {
         self.origin
     }
-    fn direction(&self) -> vec3 {
+    fn direction(&self) -> Vec3 {
         self.direction
     }
 
     fn at(&self, t: f64) -> point3 {
         self.origin() + self.direction().multiply(t)
     }
-}
-impl Ray {
+
     fn ray_color(&self, world: &dyn Hittable, depth: usize) -> color {
         // If we've exceeded the ray bounce limit, no more light is gathered.
         if depth <= 0 {
@@ -292,27 +295,37 @@ impl Ray {
 
         // if there is a hit then compute the colour from the hit's normal
         if let Some(record) = world.hit(self, 0.001, infinity) {
-            if let Some(scatter_record) = record.material.as_ref().unwrap().scatter(self, record) {
-                return scatter_record.scattered.ray_color(world, depth - 1)
-                    * scatter_record.attenuation;
-            } else {
-                return color::zeros();
+            let mat = record.material.as_ref().unwrap();
+            // if it scatters, then find scatter report or return no colour
+            if let Some(scatter_record) = mat.scatter(self, record) {
+                // if scatter_record.attenuation == color::new(1.0, 1.0, 1.0) {
+                //     eprint!("hi")
+                // }
+                // eprint!("{}\n", depth);
+                let refracted_color = scatter_record.scattered.ray_color(world, depth - 1);
+                let scatter_color = refracted_color * scatter_record.attenuation;
+                // eprint!("{:#?} {:#?} {:#?}", scatter_record.scattered, scatter_record.attenuation, depth);
+                // if scatter_color != color::zeros() {
+                //     eprint!("{:#?}\n", scatter_color);
+                // }
+                // return color::new(0.1, 0.1, 0.1);
+                return scatter_color;
             }
-
-            // let target = record.point + record.normal + vec3::random_unit_vector();
+            return color::zeros();
+            // let target = record.point + record.normal + Vec3::random_unit_vector();
             // return Ray::new(record.point, target - record.point).ray_color(world, depth - 1) * 0.5;
         }
 
         // otherwise compute background
         let unit_direction = self.direction().unit_vector();
         let t = 0.5 * (unit_direction.y() + 1.0);
-        color::new(1.0, 1.0, 1.0).multiply(1.0 - t) + color::new(0.5, 0.7, 1.0).multiply(t)
+        color::new(1.0, 1.0, 1.0) * (1.0 - t) + color::new(0.5, 0.7, 1.0) * t
     }
 
     fn hit_sphere(&self, center: point3, radius: f64) -> f64 {
         let oc = self.origin() - center;
         let dir = self.direction();
-        let a = self.direction().length_squared();
+        let a = dir.length_squared();
         let half_b = oc.dot(&dir);
         let c = oc.length_squared() - radius * radius;
         let discriminant = half_b * half_b - a * c;
@@ -325,32 +338,39 @@ impl Ray {
 
 struct HitRecord<'a> {
     point: point3,
-    normal: vec3,
+    normal: Vec3,
     material: &'a Option<Box<dyn Material>>,
     t: f64,
     front_face: bool,
 }
 
 impl<'a> HitRecord<'a> {
-    fn new(point: point3, normal: vec3, t: f64, front_face: bool) -> Self {
+    fn new(
+        point: point3,
+        normal: Vec3,
+        material: &'a Option<Box<dyn Material>>,
+        t: f64,
+        front_face: bool,
+    ) -> Self {
         Self {
             point,
             normal,
-            material: &Option::None,
+            material,
             t,
             front_face,
         }
     }
     fn empty() -> Self {
-        Self::new(point3::zeros(), vec3::zeros(), 0.0, false)
+        Self::new(point3::zeros(), Vec3::zeros(), &Option::None, 0.0, false)
     }
-    fn set_face_normal(&mut self, ray: &Ray, outward_normal: vec3) {
-        self.front_face = ray.direction().dot(&outward_normal) < 0.0;
-        self.normal = if self.front_face {
+    fn face_normal(ray: &Ray, outward_normal: Vec3) -> (Vec3, bool) {
+        let front_face = ray.direction().dot(&outward_normal) < 0.0;
+        let normal = if front_face {
             outward_normal
         } else {
             outward_normal.minus()
-        }
+        };
+        (normal, front_face)
     }
 }
 
@@ -397,13 +417,11 @@ impl Hittable for Sphere {
             }
         }
 
-        let mut record = HitRecord::empty();
-        record.t = root;
-        record.point = ray.at(record.t);
-        record.normal = (record.point - self.center) / self.radius;
-        let outward_normal = (record.point - self.center) / self.radius;
-        record.set_face_normal(ray, outward_normal);
-        record.material = &self.material;
+        let t = root;
+        let point = ray.at(t);
+        let outward_normal = (point - self.center) / self.radius;
+        let (normal, front_face) = HitRecord::face_normal(ray, outward_normal);
+        let record = HitRecord::new(point, normal, &self.material, t, front_face);
 
         Some(record)
     }
@@ -427,31 +445,28 @@ impl<'a> HittableList<'a> {
 
 impl<'a> Hittable for HittableList<'a> {
     fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<HitRecord> {
-        let mut record = HitRecord::new(point3::zeros(), vec3::zeros(), 0.0, false);
-        let mut hit_anything = false;
+        let mut record = Option::None;
+        // set closest so far to be the max, i.e. infinity
         let mut closest_so_far = t_max;
 
         for h in self.list.iter() {
             if let Some(r) = h.hit(ray, t_min, closest_so_far) {
-                hit_anything = true;
+                // update closest so far, this has to be between t_min and closest so far, so an update will always be less
                 closest_so_far = r.t;
-                record = r
+                record = Option::Some(r)
             }
         }
 
-        if !hit_anything {
-            None
-        } else {
-            Some(record)
-        }
+        // return the closest record
+        record
     }
 }
 
 struct Camera {
     origin: point3,
     lower_left_corner: point3,
-    horizontal: vec3,
-    vertical: vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
 }
 
 impl Camera {
@@ -461,10 +476,10 @@ impl Camera {
         let viewport_width = aspect_ratio * viewport_height;
         let focal_length = 1.0;
         let origin = point3::new(0.0, 0.0, 0.0);
-        let horizontal = vec3::new(viewport_width, 0.0, 0.0);
-        let vertical = vec3::new(0.0, viewport_height, 0.0);
+        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+        let vertical = Vec3::new(0.0, viewport_height, 0.0);
         let lower_left_corner =
-            origin - horizontal / 2.0 - vertical / 2.0 - vec3::new(0.0, 0.0, focal_length);
+            origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
         Self {
             origin,
             horizontal,
@@ -488,6 +503,7 @@ trait Material {
     fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord>;
 }
 
+#[derive(Debug)]
 struct ScatterRecord {
     attenuation: color,
     scattered: Ray,
@@ -514,7 +530,7 @@ impl Lambertian {
 
 impl Material for Lambertian {
     fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord> {
-        let mut scatter_direction = record.normal + vec3::random_unit_vector();
+        let mut scatter_direction = record.normal + Vec3::random_unit_vector();
 
         // Catch degenerate scatter direction
         if scatter_direction.near_zero() {
@@ -556,6 +572,39 @@ impl Material for Metal {
         } else {
             Option::None
         }
+    }
+}
+
+struct Dielectric {
+    // Index of Refraction
+    refraction_index: f64,
+}
+
+impl Dielectric {
+    fn new(refraction_index: f64) -> Self {
+        Self { refraction_index }
+    }
+}
+
+impl Material for Dielectric {
+    fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord> {
+        // white light
+        let attenuation = color::new(1.0, 1.0, 1.0);
+        let refraction_ratio = if record.front_face {
+            1.0 / self.refraction_index
+        } else {
+            self.refraction_index
+        };
+
+        let unit_direction = ray_in.direction().unit_vector();
+        let refracted = unit_direction.refract(record.normal, refraction_ratio);
+        if unit_direction != refracted {
+            // eprint!("{:?} {:?}\n", unit_direction, refracted);
+        }
+        let scattered = Ray::new(record.point, refracted);
+        let scatter_record = ScatterRecord::new(attenuation, scattered);
+        // eprint!("{:#?}\n", scatter_record);
+        Option::Some(scatter_record)
     }
 }
 
