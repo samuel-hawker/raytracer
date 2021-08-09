@@ -12,8 +12,16 @@ fn main() {
     let max_depth = 50;
 
     // World - the objects on our canvas that wil interact with rays
-    let sphere1 = Sphere::new(point3::new(0.0, 0.0, -1.0), 0.5);
-    let sphere2 = Sphere::new(point3::new(0.0, -100.5, -1.0), 100.0);
+    let sphere1 = Sphere::new(
+        point3::new(0.0, 0.0, -1.0),
+        0.5,
+        Option::Some(Box::from(Lambertian::new(color::new(0.0, 0.0, 1.0)))),
+    );
+    let sphere2 = Sphere::new(
+        point3::new(0.0, -100.5, -1.0),
+        100.0,
+        Option::Some(Box::from(Lambertian::new(color::new(1.0, 0.0, 0.0)))),
+    );
 
     let mut world = HittableList::hittable_list();
     world.add(&sphere1);
@@ -149,6 +157,16 @@ impl vec3 {
     fn random_unit_vector() -> Self {
         Self::random_in_unit_sphere().unit_vector()
     }
+
+    fn near_zero(&self) -> bool {
+        // Return true if the vector is close to zero in all dimensions.
+        let s = 1e-8;
+        self.x().abs() < s && self.y().abs() < s && self.z().abs() < s
+    }
+
+    fn reflect(self, n: Self) -> Self {
+        self - (n * 2.0 * self.dot(&n) )
+    }
 }
 
 impl Add for vec3 {
@@ -180,6 +198,14 @@ impl Mul<f64> for vec3 {
 
     fn mul(self, rhs: f64) -> Self::Output {
         self.multiply(rhs)
+    }
+}
+
+impl Mul for vec3 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+       Self::new(self.x * rhs.x, self.y * rhs.y, self.z * rhs.z)
     }
 }
 
@@ -239,8 +265,14 @@ impl Ray {
 
         // if there is a hit then compute the colour from the hit's normal
         if let Some(record) = world.hit(self, 0.001, infinity) {
-            let target = record.point + record.normal + vec3::random_unit_vector();
-            return Ray::new(record.point, target - record.point).ray_color(world, depth - 1) * 0.5;
+            if let Some(scatter_record) = record.material.as_ref().unwrap().scatter(self, record) {
+                return scatter_record.scattered.ray_color(world, depth-1) * scatter_record.attenuation;
+            } else {
+                return color::zeros();
+            }
+
+            // let target = record.point + record.normal + vec3::random_unit_vector();
+            // return Ray::new(record.point, target - record.point).ray_color(world, depth - 1) * 0.5;
         }
 
         // otherwise compute background
@@ -263,18 +295,20 @@ impl Ray {
     }
 }
 
-struct HitRecord {
+struct HitRecord<'a> {
     point: point3,
     normal: vec3,
+    material: &'a Option<Box<dyn Material>>,
     t: f64,
     front_face: bool,
 }
 
-impl HitRecord {
+impl<'a> HitRecord<'a> {
     fn new(point: point3, normal: vec3, t: f64, front_face: bool) -> Self {
         Self {
             point,
             normal,
+            material: &Option::None,
             t,
             front_face,
         }
@@ -299,11 +333,16 @@ trait Hittable {
 struct Sphere {
     center: point3,
     radius: f64,
+    material: Option<Box<dyn Material>>,
 }
 
 impl Sphere {
-    fn new(center: point3, radius: f64) -> Self {
-        Sphere { center, radius }
+    fn new(center: point3, radius: f64, material: Option<Box<dyn Material>>) -> Self {
+        Sphere {
+            center,
+            radius,
+            material,
+        }
     }
 }
 
@@ -336,6 +375,7 @@ impl Hittable for Sphere {
         record.normal = (record.point - self.center) / self.radius;
         let outward_normal = (record.point - self.center) / self.radius;
         record.set_face_normal(ray, outward_normal);
+        record.material = &self.material;
 
         Some(record)
     }
@@ -417,7 +457,70 @@ impl Camera {
 // Produce a scattered ray (or say it absorbed the incident ray).
 // If scattered, say how much the ray should be attenuated.
 trait Material {
-    fn scatter(ray_in: Ray, record: HitRecord, attenuation: color, scattered: Ray) -> bool;
+    fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord>;
+}
+
+struct ScatterRecord {
+    attenuation: color,
+    scattered: Ray,
+}
+
+impl ScatterRecord {
+    fn new(attenuation: color, scattered: Ray) -> Self {
+        Self {
+            attenuation,
+            scattered,
+        }
+    }
+}
+
+struct Lambertian {
+    albedo: color,
+}
+
+impl Lambertian {
+    fn new(color: color) -> Self {
+        Self { albedo: color }
+    }
+}
+
+impl Material for Lambertian {
+    fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord> {
+        let mut scatter_direction = record.normal + vec3::random_unit_vector();
+
+        // Catch degenerate scatter direction
+        if scatter_direction.near_zero() {
+            scatter_direction = record.normal;
+        }
+        Option::Some(ScatterRecord::new(
+            self.albedo,
+            Ray::new(record.point, scatter_direction),
+        ))
+    }
+}
+
+struct Metal {
+    albedo: color,
+}
+
+impl Metal {
+    fn new(color: color) -> Self {
+        Self { albedo: color }
+    }
+}
+
+impl Material for Metal {
+    fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord> {
+        let reflected = ray_in.direction().unit_vector().reflect(record.normal);
+        let scattered = Ray::new(record.point, reflected);
+        let attenuation = self.albedo;
+        
+        if scattered.direction().dot(&record.normal) > 0.0 {
+            Option::None
+        } else {
+            Option::Some(ScatterRecord::new(attenuation, scattered))
+        }
+    }
 }
 
 // Constants
