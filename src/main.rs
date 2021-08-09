@@ -24,9 +24,9 @@ fn main() {
     // );
 
     let material_ground = Lambertian::new(color::new(0.8, 0.8, 0.0));
-    let material_center =  Lambertian::new(color::new(0.7, 0.3, 0.3));
-    let material_left   =  Metal::new(color::new(0.8, 0.8, 0.8));
-    let material_right  = Metal::new(color::new(0.8, 0.6, 0.2));
+    let material_center = Lambertian::new(color::new(0.7, 0.3, 0.3));
+    let material_left = Metal::new(color::new(0.8, 0.8, 0.8), 0.3);
+    let material_right = Metal::new(color::new(0.8, 0.6, 0.2), 1.0);
 
     let mut world = HittableList::hittable_list();
     let sphere1 = Sphere::new(
@@ -35,17 +35,17 @@ fn main() {
         Option::Some(Box::from(material_ground)),
     );
     let sphere2 = Sphere::new(
-        point3::new(0.0,    0.0, -1.0),
+        point3::new(0.0, 0.0, -1.0),
         0.5,
         Option::Some(Box::from(material_center)),
     );
-       let sphere3 = Sphere::new(
-        point3::new(-1.0,    0.0, -1.0),
+    let sphere3 = Sphere::new(
+        point3::new(-1.0, 0.0, -1.0),
         0.5,
         Option::Some(Box::from(material_left)),
     );
     let sphere4 = Sphere::new(
-        point3::new(1.0,    0.0, -1.0),
+        point3::new(1.0, 0.0, -1.0),
         0.5,
         Option::Some(Box::from(material_right)),
     );
@@ -53,7 +53,6 @@ fn main() {
     world.add(&sphere2);
     world.add(&sphere3);
     world.add(&sphere4);
-
 
     // Camera - the position and angle from which we will capture an image
     let camera = Camera::new();
@@ -233,7 +232,7 @@ impl Mul for vec3 {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-       Self::new(self.x * rhs.x, self.y * rhs.y, self.z * rhs.z)
+        Self::new(self.x * rhs.x, self.y * rhs.y, self.z * rhs.z)
     }
 }
 
@@ -294,7 +293,8 @@ impl Ray {
         // if there is a hit then compute the colour from the hit's normal
         if let Some(record) = world.hit(self, 0.001, infinity) {
             if let Some(scatter_record) = record.material.as_ref().unwrap().scatter(self, record) {
-                return scatter_record.scattered.ray_color(world, depth-1) * scatter_record.attenuation;
+                return scatter_record.scattered.ray_color(world, depth - 1)
+                    * scatter_record.attenuation;
             } else {
                 return color::zeros();
             }
@@ -529,20 +529,28 @@ impl Material for Lambertian {
 
 struct Metal {
     albedo: color,
+    fuzz: f64,
 }
 
 impl Metal {
-    fn new(color: color) -> Self {
-        Self { albedo: color }
+    fn new(color: color, fuzz: f64) -> Self {
+        let fuzz = if fuzz > 1.0 { 1.0 } else { fuzz };
+        Self {
+            albedo: color,
+            fuzz,
+        }
     }
 }
 
 impl Material for Metal {
     fn scatter(&self, ray_in: &Ray, record: HitRecord) -> Option<ScatterRecord> {
         let reflected = ray_in.direction().unit_vector().reflect(record.normal);
-        let scattered = Ray::new(record.point, reflected);
+        let scattered = Ray::new(
+            record.point,
+            // apply fuzzing
+            reflected + point3::random_in_unit_sphere() * self.fuzz,
+        );
         let attenuation = self.albedo;
-        
         if scattered.direction().dot(&record.normal) > 0.0 {
             Option::Some(ScatterRecord::new(attenuation, scattered))
         } else {
