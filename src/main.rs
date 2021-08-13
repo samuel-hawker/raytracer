@@ -11,10 +11,10 @@ fn main() {
     let samples_per_pixel = 100;
     let max_depth = 50;
 
-    let material_ground = Lambertian::new(color::new(0.8, 0.8, 0.0));
+    let material_ground = Lambertian::new(Color::new(0.8, 0.8, 0.0));
     let material_center = Dielectric::new(1.5);
     let material_left = Dielectric::new(1.5);
-    let material_right = Metal::new(color::new(0.8, 0.6, 0.2), 1.0);
+    let material_right = Metal::new(Color::new(0.8, 0.6, 0.2), 1.0);
 
     let mut world = HittableList::hittable_list();
     let sphere1 = Sphere::new(
@@ -59,7 +59,7 @@ fn main() {
         std::io::stderr().flush().expect("some error message");
 
         for i in 0..image_width {
-            let mut pixel_color = color::zeros();
+            let mut pixel_color = Color::zeros();
             for _ in 0..samples_per_pixel {
                 let u = (i as f64 + random_f64()) / (image_width - 1) as f64;
                 let v = (j as f64 + random_f64()) / (image_height - 1) as f64;
@@ -72,6 +72,12 @@ fn main() {
     }
 
     eprint!("\nDone.")
+}
+
+// example test
+#[test]
+fn sanity() {
+    assert_eq!(2 + 2, 4);
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -187,11 +193,38 @@ impl Vec3 {
         // cos_theta = fmin(dot(-uv, n), 1.0);
         let cos_theta = f64::min(self.minus().dot(&n), 1.0);
         // r_out_perp =  etai_over_etat * (uv + cos_theta*n)
-        let r_out_perp = etai_over_etat * (self + (n * cos_theta));
+        let r_out_perp = etai_over_etat * (self + cos_theta * n);
         // r_out_parallel = -sqrt(fabs(1.0 - r_out_perp.length_squared())) * n
         let r_out_parallel = -1.0 * (1.0 - r_out_perp.length_squared()).abs().sqrt() * n;
         r_out_perp + r_out_parallel
     }
+}
+
+#[test]
+fn test_neg() {
+    assert_eq!(Vec3::new(1.0, 2.0, 3.0).minus(), Vec3::new(-1.0, -2.0, -3.0));
+}
+
+#[test]
+fn test_refract() {
+    let vector = Vec3::new(-1.0, -1.0, 0.0);
+    let normal = Vec3::new(1.0, 1.0, 0.0);
+    // no refraction
+    assert_eq!(vector.refract(normal, 1.0), Vec3::new(-1.0, -1.0, 0.0));
+    // refraction
+    assert_eq!(vector.refract(normal, 1.5), Vec3::new(-1.118033988749895, -2.618033988749895, 0.0), "1.5 angle failed");
+    assert_eq!(vector.refract(normal, 0.5), Vec3::new(-0.8660254037844386, -1.3660254037844386, 0.0), "0.5 angle failed");
+}
+
+#[test]
+fn test_refract2() {
+    let vector = Vec3::new(-1.0, 0.0, 0.0);
+    let normal = Vec3::new(1.0, 0.0, 0.0);
+    // no refraction
+    assert_eq!(vector.refract(normal, 1.0), Vec3::new(-1.0, -0.0, 0.0));
+    // 'refraction'
+    assert_eq!(vector.refract(normal, 1.5), Vec3::new(-1.118033988749895, -2.618033988749895, 0.0), "1.5 angle failed");
+    assert_eq!(vector.refract(normal, 0.5), Vec3::new(-0.8660254037844386, -1.3660254037844386, 0.0), "0.5 angle failed");
 }
 
 impl Add for Vec3 {
@@ -250,15 +283,15 @@ impl Mul for Vec3 {
 
 // Type aliases for Vec3
 use Vec3 as Point3; // 3D point
-use Vec3 as color; // RGB color
+use Vec3 as Color; // RGB Color
 
 // write colour in the ppm format of 'r g b'
-fn write_color(out: &std::io::Stdout, pixel_color: &color, samples_per_pixel: usize) {
-    // Divide the color by the number of samples.
+fn write_color(out: &std::io::Stdout, pixel_Color: &Color, samples_per_pixel: usize) {
+    // Divide the Color by the number of samples.
     let scale = 1.0 / samples_per_pixel as f64;
-    let r = (pixel_color.x() * scale).sqrt();
-    let g = (pixel_color.y() * scale).sqrt();
-    let b = (pixel_color.z() * scale).sqrt();
+    let r = (pixel_Color.x() * scale).sqrt();
+    let g = (pixel_Color.y() * scale).sqrt();
+    let b = (pixel_Color.z() * scale).sqrt();
 
     print!(
         "{} {} {}\n",
@@ -268,7 +301,7 @@ fn write_color(out: &std::io::Stdout, pixel_color: &color, samples_per_pixel: us
     );
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Ray {
     origin: Point3,
     direction: Vec3,
@@ -296,14 +329,14 @@ impl Ray {
         self.origin() + self.direction().multiply(t)
     }
 
-    fn ray_color(&self, world: &dyn Hittable, depth: usize) -> color {
+    fn ray_color(&self, world: &dyn Hittable, depth: usize) -> Color {
         // If we've exceeded the ray bounce limit, no more light is gathered.
         if depth <= 0 {
-            return color::zeros();
+            return Color::zeros();
         }
 
         // if there is a hit then compute the colour from the hit's normal
-        return if let Some(record) = world.hit(self, 0.001, infinity) {
+        return if let Some(record) = world.hit(self, 0.001, INFINITY) {
             // probably overkill
             let mat = record.material.as_ref().unwrap();
             // if it scatters, then find scatter report or return no colour
@@ -311,36 +344,23 @@ impl Ray {
                 let refracted_color = scatter_record.scattered.ray_color(world, depth - 1);
                 let scatter_color = refracted_color * scatter_record.attenuation;
                 // eprint!("{:#?} {:#?} {:#?}", scatter_record.scattered, scatter_record.attenuation, depth);
-                // if scatter_color != color::zeros() {
-                //     eprint!("{:#?}\n", scatter_color);
+                // if scatter_Color != Color::zeros() {
+                //     eprint!("{:#?}\n", scatter_Color);
                 // }
-                // return color::new(0.1, 0.1, 0.1);
+                // return Color::new(0.1, 0.1, 0.1);
 
                 scatter_color
             } else {
                 // no scatter
-                color::zeros()
+                Color::zeros()
             }
         } else {
             // otherwise compute background
             let unit_direction = self.direction().unit_vector();
             let t = 0.5 * (unit_direction.y() + 1.0);
-            color::new(1.0, 1.0, 1.0) * (1.0 - t) + color::new(0.5, 0.7, 1.0) * t
+            Color::new(1.0, 1.0, 1.0) * (1.0 - t) + Color::new(0.5, 0.7, 1.0) * t
         } 
     }
-
-    // fn hit_sphere(&self, center: Point3, radius: f64) -> f64 {
-    //     let oc = self.origin() - center;
-    //     let dir = self.direction();
-    //     let a = dir.length_squared();
-    //     let half_b = oc.dot(&dir);
-    //     let c = oc.length_squared() - radius * radius;
-    //     let discriminant = half_b * half_b - a * c;
-    //     if discriminant < 0.0 {
-    //         return -1.0;
-    //     }
-    //     (-half_b - discriminant.sqrt()) / a
-    // }
 }
 
 struct HitRecord<'a> {
@@ -370,15 +390,25 @@ impl<'a> HitRecord<'a> {
     fn empty() -> Self {
         Self::new(Point3::zeros(), Vec3::zeros(), &Option::None, 0.0, false)
     }
-    fn face_normal(ray: &Ray, outward_normal: Vec3) -> (Vec3, bool) {
-        let front_face = ray.direction().dot(&outward_normal) < 0.0;
-        let normal = if front_face {
-            outward_normal
-        } else {
-            outward_normal.minus()
-        };
-        (normal, front_face)
-    }
+   
+}
+
+// belong to sphere?
+ fn face_normal(ray: &Ray, outward_normal: Vec3) -> (Vec3, bool) {
+    let front_face = ray.direction().dot(&outward_normal) < 0.0;
+    let normal = if front_face {
+        outward_normal
+    } else {
+        outward_normal.minus()
+    };
+    (normal, front_face)
+}
+
+#[test]
+fn test_face_normal_calc() {
+    let ray = Ray::new(Point3::zeros(), Point3::new(1.0, 0.0, 0.0));
+    assert_eq!(face_normal(&ray, Vec3::new(-1.0, 0.0, 0.0)), (Vec3::new(-1.0, 0.0, 0.0), true) );
+    assert_eq!(face_normal(&ray, Vec3::new(1.0, 0.0, 0.0)), (Vec3::new(-1.0, 0.0, 0.0), false) );
 }
 
 trait Hittable {
@@ -427,6 +457,7 @@ impl Hittable for Sphere {
         let t = root;
         let point = ray.at(t);
         let outward_normal = (point - self.center) / self.radius;
+        // remove face_normal?
         // let (normal, front_face) = HitRecord::face_normal(ray, outward_normal);
         let front_face = ray.direction().dot(&outward_normal) < 0.0;
         let normal = if front_face {
@@ -516,14 +547,14 @@ trait Material {
     fn scatter(&self, ray_in: &Ray, record: &HitRecord) -> Option<ScatterRecord>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct ScatterRecord {
-    attenuation: color,
+    attenuation: Color,
     scattered: Ray,
 }
 
 impl ScatterRecord {
-    fn new(attenuation: color, scattered: Ray) -> Self {
+    fn new(attenuation: Color, scattered: Ray) -> Self {
         Self {
             attenuation,
             scattered,
@@ -532,12 +563,12 @@ impl ScatterRecord {
 }
 
 struct Lambertian {
-    albedo: color,
+    albedo: Color,
 }
 
 impl Lambertian {
-    fn new(color: color) -> Self {
-        Self { albedo: color }
+    fn new(Color: Color) -> Self {
+        Self { albedo: Color }
     }
 }
 
@@ -557,15 +588,15 @@ impl Material for Lambertian {
 }
 
 struct Metal {
-    albedo: color,
+    albedo: Color,
     fuzz: f64,
 }
 
 impl Metal {
-    fn new(color: color, fuzz: f64) -> Self {
+    fn new(Color: Color, fuzz: f64) -> Self {
         let fuzz = if fuzz > 1.0 { 1.0 } else { fuzz };
         Self {
-            albedo: color,
+            albedo: Color,
             fuzz,
         }
     }
@@ -602,7 +633,7 @@ impl Dielectric {
 impl Material for Dielectric {
     fn scatter(&self, ray_in: &Ray, record: &HitRecord) -> Option<ScatterRecord> {
         // white light
-        let attenuation = color::new(1.0, 1.0, 1.0);
+        let attenuation = Color::new(1.0, 1.0, 1.0);
         let refraction_ratio = if record.front_face {
             1.0 / self.refraction_index
         } else {
@@ -621,13 +652,26 @@ impl Material for Dielectric {
     }
 }
 
+#[test]
+fn test_dielectric_scatter() {
+   let material = Dielectric::new(1.5);
+   let boxed_material: Option<Box<dyn Material>> = Some(Box::from(material));
+   let ray = Ray::new(Point3::zeros(), Point3::new(1.0, 0.0, 0.0));
+   let hit_record = HitRecord::new(Point3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), &boxed_material, 0.5, true);
+   let material = hit_record.material.as_ref().unwrap();
+   let scatter_record = material.scatter(&ray, &hit_record);
+   let scatter_record = scatter_record.unwrap();
+   // white attenuation + a new ray at the pont of collision + the direction??
+   assert_eq!(scatter_record, ScatterRecord::new(Color::new(1.0, 1.0, 1.0), Ray::new(Point3::new(1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0))))
+}
+
 // Constants
-const infinity: f64 = std::f64::INFINITY;
-const pi: f64 = std::f64::consts::PI;
+const INFINITY: f64 = std::f64::INFINITY;
+const PI: f64 = std::f64::consts::PI;
 
 // Utility Functions
 fn degrees_to_radians(degrees: degrees) -> radians {
-    return degrees * pi / 180.0;
+    return degrees * PI / 180.0;
 }
 
 // Returns a random f64 in [0,1).
